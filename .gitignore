@@ -1,3 +1,5 @@
+config.lt
+nhrpd/nhrpd
 compile
 config.log
 config.h
