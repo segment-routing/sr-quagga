@@ -1,6 +1,6 @@
 ## Process this file with automake to produce Makefile.in.
 
-AM_CPPFLAGS = -I.. -I$(top_srcdir) -I$(top_srcdir)/lib -I$(top_builddir)/lib
+AM_CPPFLAGS = -I.. -I$(top_srcdir) -I$(top_srcdir)/lib -I$(top_builddir)/lib -I$(top_srcdir)/../../lib
 DEFS = @DEFS@ -DSYSCONFDIR=\"$(sysconfdir)/\"
 INSTALL_SDATA=@INSTALL@ -m 600
 
@@ -26,7 +26,7 @@ noinst_HEADERS = \
 ospf6d_SOURCES = \
 	ospf6_main.c $(libospf6_a_SOURCES)
 
-ospf6d_LDADD = ../lib/libzebra.la @LIBCAP@
+ospf6d_LDADD = ../lib/libzebra.la @LIBCAP@ $(top_srcdir)/../../lib/libsr.a -lpthread -ljansson
 
 examplesdir = $(exampledir)
 dist_examples_DATA = ospf6d.conf.sample
