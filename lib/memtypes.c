@@ -228,6 +228,9 @@ struct memory_list memory_list_ospf[] =
 struct memory_list memory_list_ospf6[] =
 {
   { MTYPE_OSPF6_TOP,          "OSPF6 top"			},
+  { MTYPE_OSPF6_OVSDB,        "OSPF6 ovsdb"			},
+  { MTYPE_OSPF6_OVSDB_NODE,   "OSPF6 ovsdb node"		},
+  { MTYPE_OSPF6_OVSDB_LINK,   "OSPF6 ovsdb link"		},
   { MTYPE_OSPF6_AREA,         "OSPF6 area"			},
   { MTYPE_OSPF6_IF,           "OSPF6 interface"			},
   { MTYPE_OSPF6_NEIGHBOR,     "OSPF6 neighbor"			},

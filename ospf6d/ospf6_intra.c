@@ -1183,6 +1183,16 @@ ospf6_intra_prefix_lsa_originate_transit (struct thread *thread)
   return 0;
 }
 
+static void
+ospf6_add_ovsdb_prefix (struct ospf6_route *route)
+{
+  char buf[64];
+  char adv_router_str[64];
+  prefix2str (&route->prefix, buf, sizeof (buf));
+  inet_ntop (AF_INET, &route->path.origin.adv_router, adv_router_str, sizeof (adv_router_str));
+  zlog_debug ("  New prefix %s for router is %s", buf, adv_router_str);
+}
+
 void
 ospf6_intra_prefix_lsa_add (struct ospf6_lsa *lsa)
 {
@@ -1299,6 +1309,8 @@ ospf6_intra_prefix_lsa_add (struct ospf6_lsa *lsa)
           prefix2str (&route->prefix, buf, sizeof (buf));
           zlog_debug ("  add %s", buf);
         }
+      // TODO Add the prefix for either the router or the intf
+      ospf6_add_ovsdb_prefix(route);
 
       ospf6_route_add (route, oa->route_table);
       prefix_num--;

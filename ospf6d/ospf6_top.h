@@ -24,6 +24,8 @@
 
 #include "routemap.h"
 
+#include "ospf6_ovsdb.h"
+
 /* OSPFv3 top level data structure */
 struct ospf6
 {
@@ -90,6 +92,7 @@ struct ospf6
   u_char distance_external;
 
   struct route_table *distance_table;
+  struct ospf6_ovsdb *ovsdb;
 };
 
 #define OSPF6_DISABLED    0x01

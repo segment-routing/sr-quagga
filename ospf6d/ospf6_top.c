@@ -181,6 +181,8 @@ ospf6_delete (struct ospf6 *o)
   ospf6_distance_reset (o);
   route_table_finish (o->distance_table);
 
+  ospf6_ovsdb_delete(o->ovsdb);
+
   XFREE (MTYPE_OSPF6_TOP, o);
 }
 
@@ -1296,6 +1298,36 @@ DEFUN (show_ipv6_ospf6_route_type_detail,
   return CMD_SUCCESS;
 }
 
+/* Set ovsdb server commands. */
+DEFUN (ospf6_ovsdb_server,
+       ospf6_ovsdb_server_cmd,
+       "ovsdb_adv (tcp|ssl) X:X::X:X <1-65535> WORD",
+       "Advertise ovsdb server from changes in the network\n"
+       "Protocol choice (tcp or ssl)\n"
+       IPV6_STR
+       "Port number\n"
+       "Database name\n")
+{
+  int ret;
+  unsigned char buf[sizeof(struct in6_addr)];
+  struct ospf6 *o;
+
+  o = (struct ospf6 *) vty->index;
+  zlog_debug("Start ovsdb %s %s %s %s", argv[0], argv[1], argv[2], argv[3]);
+
+  ret = inet_pton (AF_INET6, argv[1], &buf);
+  if (ret != 1)
+  {
+    vty_out (vty, "Cannot find IPv6 address in string '%s' (errno == %d)%s", argv[1], errno, VNL);
+    return CMD_SUCCESS;
+  }
+
+  if (o->ovsdb == NULL)
+    o->ovsdb = ospf6_ovsdb_create(argv[0], argv[1], argv[2], argv[3]);
+
+  return CMD_SUCCESS;
+}
+
 static void
 ospf6_stub_router_config_write (struct vty *vty)
 {
@@ -1458,6 +1490,8 @@ ospf6_top_init (void)
   install_element (OSPF6_NODE, &no_ospf6_distance_source_cmd);
   install_element (OSPF6_NODE, &ospf6_distance_source_access_list_cmd);
   install_element (OSPF6_NODE, &no_ospf6_distance_source_access_list_cmd);
+
+  install_element (OSPF6_NODE, &ospf6_ovsdb_server_cmd);
 }
 
 

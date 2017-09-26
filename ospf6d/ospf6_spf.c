@@ -42,6 +42,9 @@
 #include "ospf6d.h"
 #include "ospf6_abr.h"
 
+#include <srdb.h>
+#include <prefix.h>
+
 unsigned char conf_debug_ospf6_spf = 0;
 
 static int
@@ -447,6 +450,13 @@ ospf6_spf_calculation (u_int32_t router_id,
   root->nexthop[0].ifindex = 0; /* loopbak I/F is better ... */
   inet_pton (AF_INET6, "::1", &root->nexthop[0].address);
 
+  /* Add the root node to OVSDB */
+  if (ospf6->ovsdb)
+    {
+      zlog_debug("  New node: '%s'", root->name);
+      ospf6_ovsdb_set_active_router(ospf6->ovsdb, router_id);
+    }
+
   /* Actually insert root to the candidate-list as the only candidate */
   pqueue_enqueue (root, candidate_list);
 
@@ -493,6 +503,20 @@ ospf6_spf_calculation (u_int32_t router_id,
               w->hops = v->hops + 1;
             }
 
+          /* Add 'w' node and its link with 'v' to OVSDB */
+          int v_router_id = htonl (ospf6_linkstate_prefix_adv_router (&v->vertex_id));
+	  int w_router_id = htonl (ospf6_linkstate_prefix_adv_router (&w->vertex_id));
+          if (ospf6->ovsdb)
+            {
+              zlog_debug ("  New node: '%s'", w->name);
+              ospf6_ovsdb_set_active_router (ospf6->ovsdb, w_router_id);
+              if (v_router_id != w_router_id)
+                {
+                  zlog_debug("  New link between '%s' and '%s'", v->name, w->name);
+                  ospf6_ovsdb_set_active_link(ospf6->ovsdb, v_router_id, w_router_id);
+                }
+            }
+
           /* nexthop calculation */
           if (w->hops == 0)
             w->nexthop[0].ifindex = ROUTER_LSDESC_GET_IFID (lsdesc);
@@ -514,6 +538,12 @@ ospf6_spf_calculation (u_int32_t router_id,
     }
 
   pqueue_delete (candidate_list);
+
+  /* Delete down elements from ovsdb */
+  if (ospf6->ovsdb) {
+    zlog_debug ("  Remove down links and routers");
+    ospf6_ovsdb_delete_down_element (ospf6->ovsdb);
+  }
 
   oa->spf_calculation++;
 }
