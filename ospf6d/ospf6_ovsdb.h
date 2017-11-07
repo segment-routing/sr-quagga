@@ -14,8 +14,9 @@ struct ospf6_ovsdb_node {
 };
 
 struct ospf6_ovsdb_link {
-	int ospf_id_1;
-	int ospf_id_2;
+	int32_t ospf_id_1;
+	int32_t ospf_id_2;
+	int64_t link_id;
 	struct srdb_linkstate_entry db_entry;
 	/* Last time this node was up */
 	int last_spf;

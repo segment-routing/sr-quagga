@@ -24,8 +24,10 @@ hash_long (void *key)
 static void
 free_node (struct ospf6_ovsdb_node *node)
 {
-	if (node)
+	if (node) {
+		free(node->db_entry.prefix);
 		XFREE(MTYPE_OSPF6_OVSDB_NODE, node);
+	}
 }
 
 static void
@@ -39,7 +41,6 @@ static int
 mapping_read (struct srdb_entry *entry)
 {
 	struct srdb_namemap_entry *mapping_entry = (struct srdb_namemap_entry *) entry;
-	zlog_debug("  %s: start", __func__);
 
 	struct ospf6_ovsdb_node *node = XCALLOC(MTYPE_OSPF6_OVSDB_NODE, sizeof (struct ospf6_ovsdb_node));
 	if (!node) {
@@ -47,14 +48,55 @@ mapping_read (struct srdb_entry *entry)
 		return -1;
 	}
 	strncpy(node->db_entry.name, mapping_entry->routerName, SLEN + 1);
-	strncpy(node->db_entry.name, mapping_entry->routerName, SLEN + 1);
+	strncpy(node->db_entry.addr, mapping_entry->addr, SLEN + 1);
+	node->db_entry.prefix = strndup(mapping_entry->prefix, 1024); // FIXME Use a define
+	strncpy(node->db_entry.pbsid, mapping_entry->pbsid, SLEN + 1);
 	node->ospf_id = mapping_entry->routerId;
 
 	if (hmap_set(ospf6->ovsdb->nodes_map, (void *)(intptr_t) node->ospf_id, node)) {
-		zlog_debug("  %s: Cannot insert it in the hmap", __func__);
+		zlog_debug("  %s: Cannot insert the node %d in the hmap", __func__, node->ospf_id);
+		free_node(node);
 		return -1;
 	}
-	zlog_debug("  %s: successful end for router id %d", __func__, node->ospf_id);
+
+	return 0;
+}
+
+static int
+available_link_read (struct srdb_entry *entry)
+{
+	struct srdb_availlink_entry *mapping_entry = (struct srdb_availlink_entry *) entry;
+
+	struct ospf6_ovsdb_link *link = XCALLOC(MTYPE_OSPF6_OVSDB_LINK, sizeof (struct ospf6_ovsdb_link));
+	if (!link) {
+		zlog_debug("  %s: Allocation problem", __func__);
+		return -1;
+	}
+
+	strncpy(link->db_entry.name1, mapping_entry->name1, SLEN + 1);
+	strncpy(link->db_entry.name2, mapping_entry->name2, SLEN + 1);
+	strncpy(link->db_entry.addr1, mapping_entry->addr1, SLEN + 1);
+	strncpy(link->db_entry.addr2, mapping_entry->addr2, SLEN + 1);
+
+	link->db_entry.metric = mapping_entry->metric;
+	link->db_entry.bw = mapping_entry->bw;
+	link->db_entry.ava_bw = mapping_entry->ava_bw;
+	link->db_entry.delay = mapping_entry->delay;
+
+	link->ospf_id_1 = mapping_entry->routerId1;
+	link->ospf_id_2 = mapping_entry->routerId2;
+	link->ospf_id_1 = mapping_entry->routerId1 > mapping_entry->routerId2
+	                     ? mapping_entry->routerId1 : mapping_entry->routerId2;
+	link->ospf_id_2 = link->ospf_id_1 != mapping_entry->routerId1
+	                      ? mapping_entry->routerId1 : mapping_entry->routerId2;
+	link->link_id = ((int64_t) link->ospf_id_1 << 32) + ((int64_t) link->ospf_id_2);
+
+	if (hmap_set(ospf6->ovsdb->links_map, &link->link_id, link)) {
+		zlog_debug("  %s: Cannot insert the link '%d' <-> '%d' in the hmap", __func__,
+		           link->ospf_id_1, link->ospf_id_2);
+		free_link(link);
+		return -1;
+	}
 
 	return 0;
 }
@@ -66,11 +108,15 @@ launch_srdb (struct srdb *srdb)
 
 	mon_flags = MON_INITIAL | MON_INSERT;
 
-	fprintf(stderr, "TEST sdfdsfgdf\n");
-
 	if (srdb_monitor(srdb, "NameIdMapping", mon_flags, mapping_read,
 	                 NULL, NULL, false, false) < 0) {
 		zlog_err("failed to monitor the Name-RouterId mapping.");
+		return -1;
+	}
+
+	if (srdb_monitor(srdb, "AvailableLink", mon_flags, available_link_read,
+	                 NULL, NULL, false, false) < 0) {
+		zlog_err("failed to monitor the AvailableLink table.");
 		return -1;
 	}
 
@@ -82,8 +128,6 @@ ospf6_ovsdb_create (const char *proto, const char *ip6, const char *port, const 
 {
 	struct ospf6_ovsdb *ovsdb;
 
-	zlog_debug("  %s: Attempt to create an ovsdb object", __func__);
-
 	ovsdb = XCALLOC (MTYPE_OSPF6_OVSDB, sizeof (struct ospf6_ovsdb));
 	if (!ovsdb)
 		return NULL;
@@ -93,33 +137,23 @@ ospf6_ovsdb_create (const char *proto, const char *ip6, const char *port, const 
 	strncpy(ovsdb->ovsdb_conf.ovsdb_database, database, SLEN + 1);
 	ovsdb->ovsdb_conf.ntransacts = 1;
 
-	zlog_debug("  %s: Attempt to create an ovsdb object 2", __func__);
-
 	ovsdb->srdb = srdb_new(&ovsdb->ovsdb_conf);
 	if (!ovsdb->srdb)
 		goto out_free_ovsdb;
-
-	zlog_debug("  %s: Attempt to create an ovsdb object 3", __func__);
 
 	/* The key is the router id */
 	ovsdb->nodes_map = hmap_new(hash_int, compare_int);
 	if (!ovsdb->nodes_map)
 		goto free_srdb;
 
-	zlog_debug("  %s: Attempt to create an ovsdb object 4", __func__);
-
 	/* The key is the juxtaposition of both router id forming the link */
 	ovsdb->links_map = hmap_new(hash_long, compare_long);
 	if (!ovsdb->links_map)
 		goto free_nodes_map;
 
-	zlog_debug("  %s: Attempt to create an ovsdb object 5", __func__);
-
 	/* Start monitoring the mapping between router ids and names */
 	if (launch_srdb(ovsdb->srdb))
 		goto free_links_map;
-
-	zlog_debug("  %s: Object created", __func__);
 
 	return ovsdb;
 
@@ -138,7 +172,6 @@ out_free_ovsdb:
 void
 ospf6_ovsdb_delete (struct ospf6_ovsdb *ovsdb)
 {
-	zlog_debug("  %s: Start object deletion", __func__);
 	if (!ovsdb)
 		return;
 
@@ -165,7 +198,6 @@ ospf6_ovsdb_delete (struct ospf6_ovsdb *ovsdb)
 	hmap_destroy(ovsdb->nodes_map);
 
 	srdb_destroy(ovsdb->srdb);
-	zlog_debug("  %s: Object deleted", __func__);
 }
 
 static int
@@ -173,7 +205,6 @@ ospf6_ovsdb_insert_nodeState (struct ospf6_ovsdb *ovsdb, struct ospf6_ovsdb_node
 {
 	struct srdb_table *tbl;
 	int ret;
-	zlog_debug("  %s: start", __func__);
 
 	tbl = srdb_table_by_name(ovsdb->srdb->tables, "NodeState");
 	if (!tbl) {
@@ -188,7 +219,6 @@ ospf6_ovsdb_insert_nodeState (struct ospf6_ovsdb *ovsdb, struct ospf6_ovsdb_node
 		         node->db_entry.name, node->db_entry.addr, node->db_entry.prefix, node->db_entry.pbsid);
 		return -1;
 	}
-	zlog_debug("  %s: sucessful end", __func__);
 
 	return 0;
 }
@@ -196,7 +226,6 @@ ospf6_ovsdb_insert_nodeState (struct ospf6_ovsdb *ovsdb, struct ospf6_ovsdb_node
 int
 ospf6_ovsdb_set_active_router (struct ospf6_ovsdb *ovsdb, int routerid)
 {
-	zlog_debug("  %s: start", __func__);
 	char buf[128];
 	struct ospf6_ovsdb_node *node = hmap_get(ovsdb->nodes_map, (void *)(intptr_t) routerid);
 	if (!node) {
@@ -217,7 +246,6 @@ ospf6_ovsdb_set_active_router (struct ospf6_ovsdb *ovsdb, int routerid)
 		zlog_debug("  %s: Just inserted ? %d", __func__, node->ovsdb_inserted);
 		return node->ovsdb_inserted;
 	}
-	zlog_debug("  %s: Already inserted", __func__);
 
 	return 0;
 }
@@ -227,7 +255,6 @@ ospf6_ovsdb_insert_linkState (struct ospf6_ovsdb *ovsdb, struct ospf6_ovsdb_link
 {
 	struct srdb_table *tbl;
 	int ret;
-	zlog_debug("  %s: start", __func__);
 
 	tbl = srdb_table_by_name(ovsdb->srdb->tables, "LinkState");
 	if (!tbl) {
@@ -242,7 +269,6 @@ ospf6_ovsdb_insert_linkState (struct ospf6_ovsdb *ovsdb, struct ospf6_ovsdb_link
 		         link->db_entry.name1, link->db_entry.addr1, link->db_entry.name2, link->db_entry.addr2);
 		return -1;
 	}
-	zlog_debug("  %s: sucessful end", __func__);
 
 	return 0;
 }
@@ -253,7 +279,6 @@ ospf6_ovsdb_set_active_link (struct ospf6_ovsdb *ovsdb, int routerid_1, int rout
 	char buf1[128];
 	char buf2[128];
 	int64_t link_id = 0;
-	zlog_debug("  %s: start", __func__);
 
 	if (routerid_1 == routerid_2)
 		return -1;
@@ -264,38 +289,10 @@ ospf6_ovsdb_set_active_link (struct ospf6_ovsdb *ovsdb, int routerid_1, int rout
 	link_id = ((int64_t) first_routerid << 32) + ((int64_t) second_routerid);
 	struct ospf6_ovsdb_link *link = hmap_get(ovsdb->links_map, &link_id);
 	if (!link) {
-		/* New link */
-		link = XCALLOC(MTYPE_OSPF6_OVSDB_LINK, sizeof (struct ospf6_ovsdb_link));
-		if (!link)
-			return -1;
-		link->ospf_id_1 = first_routerid;
-		link->ospf_id_2 = second_routerid;
-
-		struct ospf6_ovsdb_node *node1 = hmap_get(ovsdb->nodes_map, (void *)(intptr_t) first_routerid);
-		if (!node1) {
-			inet_ntop(AF_INET, &first_routerid, buf1, sizeof(buf1));
-			zlog_err("Link to non-existent router '%s'", buf1);
-			free_link(link);
-			return -1;
-		}
-		struct ospf6_ovsdb_node *node2 = hmap_get(ovsdb->nodes_map, (void *)(intptr_t) second_routerid);
-		if (!node2) {
-			inet_ntop(AF_INET, &second_routerid, buf1, sizeof(buf1));
-			zlog_err("Link to non-existent router '%s'", buf1);
-			free_link(link);
-			return -1;
-		}
-
-		strncpy(link->db_entry.name1, node1->db_entry.name, SLEN + 1);
-		strncpy(link->db_entry.name2, node2->db_entry.name, SLEN + 1);
-
-		if (hmap_set(ovsdb->links_map, &link_id, link)) {
-			inet_ntop(AF_INET, &first_routerid, buf1, sizeof(buf1));
-			inet_ntop(AF_INET, &second_routerid, buf2, sizeof(buf2));
-			zlog_err("Link '%s' <-> '%s' cannot be added", buf1, buf2);
-			free_link(link);
-			return -1;
-		}
+		inet_ntop(AF_INET, &first_routerid, buf1, sizeof(buf1));
+		inet_ntop(AF_INET, &second_routerid, buf2, sizeof(buf2));
+		zlog_err("Link '%s' <-> '%s' cannot be mapped to an available link", buf1, buf2);
+		return -1;
 	}
 
 	/* The node is known as active */
@@ -308,10 +305,8 @@ ospf6_ovsdb_set_active_link (struct ospf6_ovsdb *ovsdb, int routerid_1, int rout
 	// if (*(link->db_entry.addr1) != '\0' && *(link->db_entry.addr2) != '\0')
 	if (!link->ovsdb_inserted) {
 		link->ovsdb_inserted = !ospf6_ovsdb_insert_linkState(ovsdb, link);
-		zlog_debug("  %s: Just inserted ? %d", __func__, link->ovsdb_inserted);
 		return link->ovsdb_inserted;
 	}
-	zlog_debug("  %s: Already inserted", __func__);
 
 	return 0;
 }
@@ -336,7 +331,6 @@ ospf6_ovsdb_delete_down_element (struct ospf6_ovsdb *ovsdb)
 	struct hmap_entry *he;
 	struct ospf6_ovsdb_node *node;
 	struct ospf6_ovsdb_link *link;
-	zlog_debug("  %s: start", __func__);
 
 	/* For consistency reasons, links are deleted before nodes */
 
@@ -357,5 +351,4 @@ ospf6_ovsdb_delete_down_element (struct ospf6_ovsdb *ovsdb)
 			node->last_spf = 0; /* For the next spf */
 		}
 	}
-	zlog_debug("  %s: end", __func__);
 }

@@ -453,7 +453,6 @@ ospf6_spf_calculation (u_int32_t router_id,
   /* Add the root node to OVSDB */
   if (ospf6->ovsdb)
     {
-      zlog_debug("  New node: '%s'", root->name);
       ospf6_ovsdb_set_active_router(ospf6->ovsdb, router_id);
     }
 
@@ -508,11 +507,9 @@ ospf6_spf_calculation (u_int32_t router_id,
 	  int w_router_id = htonl (ospf6_linkstate_prefix_adv_router (&w->vertex_id));
           if (ospf6->ovsdb)
             {
-              zlog_debug ("  New node: '%s'", w->name);
               ospf6_ovsdb_set_active_router (ospf6->ovsdb, w_router_id);
               if (v_router_id != w_router_id)
                 {
-                  zlog_debug("  New link between '%s' and '%s'", v->name, w->name);
                   ospf6_ovsdb_set_active_link(ospf6->ovsdb, v_router_id, w_router_id);
                 }
             }
@@ -541,7 +538,6 @@ ospf6_spf_calculation (u_int32_t router_id,
 
   /* Delete down elements from ovsdb */
   if (ospf6->ovsdb) {
-    zlog_debug ("  Remove down links and routers");
     ospf6_ovsdb_delete_down_element (ospf6->ovsdb);
   }
 
