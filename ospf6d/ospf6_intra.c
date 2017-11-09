@@ -1190,7 +1190,6 @@ ospf6_add_ovsdb_prefix (struct ospf6_route *route)
   char adv_router_str[64];
   prefix2str (&route->prefix, buf, sizeof (buf));
   inet_ntop (AF_INET, &route->path.origin.adv_router, adv_router_str, sizeof (adv_router_str));
-  zlog_debug ("  New prefix %s for router is %s", buf, adv_router_str);
 }
 
 void
