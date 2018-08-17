@@ -453,7 +453,8 @@ ospf6_spf_calculation (u_int32_t router_id,
   /* Add the root node to OVSDB */
   if (ospf6->ovsdb)
     {
-      ospf6_ovsdb_set_active_router(ospf6->ovsdb, router_id);
+      if (ospf6_ovsdb_set_active_router(ospf6->ovsdb, (int) router_id))
+	zlog_debug ("  Cannot set root %d as active", (int) router_id);
     }
 
   /* Actually insert root to the candidate-list as the only candidate */

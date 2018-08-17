@@ -51,9 +51,9 @@ mapping_read (struct srdb_entry *entry)
 	strncpy(node->db_entry.addr, mapping_entry->addr, SLEN + 1);
 	node->db_entry.prefix = strndup(mapping_entry->prefix, 1024); // FIXME Use a define
 	strncpy(node->db_entry.pbsid, mapping_entry->pbsid, SLEN + 1);
-	node->ospf_id = mapping_entry->routerId;
+	node->ospf_id = (int64_t) mapping_entry->routerId;
 
-	if (hmap_set(ospf6->ovsdb->nodes_map, (void *)(intptr_t) node->ospf_id, node)) {
+	if (hmap_set(ospf6->ovsdb->nodes_map, &node->ospf_id, node)) {
 		zlog_debug("  %s: Cannot insert the node %d in the hmap", __func__, node->ospf_id);
 		free_node(node);
 		return -1;
@@ -142,7 +142,7 @@ ospf6_ovsdb_create (const char *proto, const char *ip6, const char *port, const 
 		goto out_free_ovsdb;
 
 	/* The key is the router id */
-	ovsdb->nodes_map = hmap_new(hash_int, compare_int);
+	ovsdb->nodes_map = hmap_new(hash_long, compare_long);
 	if (!ovsdb->nodes_map)
 		goto free_srdb;
 
@@ -213,7 +213,8 @@ ospf6_ovsdb_insert_nodeState (struct ospf6_ovsdb *ovsdb, struct ospf6_ovsdb_node
 	}
 
 	ret = srdb_insert_sync(ovsdb->srdb, tbl,
-	                       (struct srdb_entry *) &node->db_entry, NULL);
+	                       (struct srdb_entry *) &node->db_entry,
+			       &node->db_entry._row);
 	if (ret) {
 		zlog_err("Cannot push NodeState name='%s' addr='%s' prefix='%s' pbsid='%s'",
 		         node->db_entry.name, node->db_entry.addr, node->db_entry.prefix, node->db_entry.pbsid);
@@ -227,7 +228,8 @@ int
 ospf6_ovsdb_set_active_router (struct ospf6_ovsdb *ovsdb, int routerid)
 {
 	char buf[128];
-	struct ospf6_ovsdb_node *node = hmap_get(ovsdb->nodes_map, (void *)(intptr_t) routerid);
+	int64_t tmp = (int64_t) routerid;
+	struct ospf6_ovsdb_node *node = hmap_get(ovsdb->nodes_map, &tmp);
 	if (!node) {
 		inet_ntop(AF_INET, &routerid, buf, sizeof(buf));
 		zlog_err("Router id '%d' => '%s' cannot be mapped to a router name", routerid, buf);
@@ -258,12 +260,13 @@ ospf6_ovsdb_insert_linkState (struct ospf6_ovsdb *ovsdb, struct ospf6_ovsdb_link
 
 	tbl = srdb_table_by_name(ovsdb->srdb->tables, "LinkState");
 	if (!tbl) {
-		zlog_err("Cannot find NodeState table");
+		zlog_err("Cannot find LinkState table");
 		return -1;
 	}
 
 	ret = srdb_insert_sync(ovsdb->srdb, tbl,
-	                       (struct srdb_entry *) &link->db_entry, NULL);
+	                       (struct srdb_entry *) &link->db_entry,
+			       &link->db_entry._row);
 	if (ret) {
 		zlog_err("Cannot push LinkState name1='%s' addr1='%s' name2='%s' addr2='%s'",
 		         link->db_entry.name1, link->db_entry.addr1, link->db_entry.name2, link->db_entry.addr2);
@@ -314,14 +317,46 @@ ospf6_ovsdb_set_active_link (struct ospf6_ovsdb *ovsdb, int routerid_1, int rout
 static int
 ospf6_ovsdb_delete_node (struct ospf6_ovsdb *ovsdb, struct ospf6_ovsdb_node *node)
 {
-	// TODO Add delete primitives to srdb library
+	struct srdb_table *tbl;
+	int ret;
+
+	tbl = srdb_table_by_name(ovsdb->srdb->tables, "NodeState");
+	if (!tbl) {
+		zlog_err("Cannot find NodeState table");
+		return -1;
+	}
+
+	ret = srdb_delete_sync(ovsdb->srdb, tbl,
+			       (struct srdb_entry *) &node->db_entry, NULL);
+	if (ret) {
+		zlog_err("Cannot delete NodeState name='%s' addr='%s' prefix='%s' pbsid='%s'",
+		         node->db_entry.name, node->db_entry.addr, node->db_entry.prefix, node->db_entry.pbsid);
+		return -1;
+	}
+
 	return 0;
 }
 
 static int
 ospf6_ovsdb_delete_link (struct ospf6_ovsdb *ovsdb, struct ospf6_ovsdb_link *link)
 {
-	// TODO Add delete primitives to srdb library
+	struct srdb_table *tbl;
+	int ret;
+
+	tbl = srdb_table_by_name(ovsdb->srdb->tables, "LinkState");
+	if (!tbl) {
+		zlog_err("Cannot find LinkState table");
+		return -1;
+	}
+
+	ret = srdb_delete_sync(ovsdb->srdb, tbl,
+	                       (struct srdb_entry *) &link->db_entry, NULL);
+	if (ret) {
+		zlog_err("Cannot delete LinkState name1='%s' addr1='%s' name2='%s' addr2='%s'",
+		         link->db_entry.name1, link->db_entry.addr1, link->db_entry.name2, link->db_entry.addr2);
+		return -1;
+	}
+
 	return 0;
 }
 
@@ -352,3 +387,4 @@ ospf6_ovsdb_delete_down_element (struct ospf6_ovsdb *ovsdb)
 		}
 	}
 }
+

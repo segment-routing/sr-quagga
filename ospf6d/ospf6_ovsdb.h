@@ -5,7 +5,7 @@
 
 
 struct ospf6_ovsdb_node {
-	int ospf_id;
+	int64_t ospf_id;
 	struct srdb_nodestate_entry db_entry;
 	/* Last time this node was up */
 	int last_spf;
