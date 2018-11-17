@@ -113,6 +113,7 @@ extern void closezlog (struct zlog *zl);
 #endif /* __GNUC__ */
 
 /* Generic function for zlog. */
+extern void vzlog (struct zlog *zl, int priority, const char *format, va_list args);
 extern void zlog (struct zlog *zl, int priority, const char *format, ...)
   PRINTF_ATTRIBUTE(3, 4);
 

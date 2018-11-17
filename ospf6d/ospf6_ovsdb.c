@@ -8,6 +8,16 @@
 #include "ospf6_top.h"
 
 
+static int
+zlog_srdb (const char *fmt, ...)
+{
+	va_list args;
+	va_start(args, fmt);
+	vzlog(NULL, LOG_ERR, fmt, args);
+	va_end(args);
+	return 0;
+}
+
 static inline int
 compare_long (void *k1, void *k2)
 {
@@ -54,7 +64,7 @@ mapping_read (struct srdb_entry *entry)
 	node->ospf_id = (int64_t) mapping_entry->routerId;
 
 	if (hmap_set(ospf6->ovsdb->nodes_map, &node->ospf_id, node)) {
-		zlog_debug("  %s: Cannot insert the node %d in the hmap", __func__, node->ospf_id);
+		zlog_debug("  %s: Cannot insert the node %ld in the hmap", __func__, node->ospf_id);
 		free_node(node);
 		return -1;
 	}
@@ -137,7 +147,7 @@ ospf6_ovsdb_create (const char *proto, const char *ip6, const char *port, const 
 	strncpy(ovsdb->ovsdb_conf.ovsdb_database, database, SLEN + 1);
 	ovsdb->ovsdb_conf.ntransacts = 1;
 
-	ovsdb->srdb = srdb_new(&ovsdb->ovsdb_conf);
+	ovsdb->srdb = srdb_new(&ovsdb->ovsdb_conf, zlog_srdb);
 	if (!ovsdb->srdb)
 		goto out_free_ovsdb;
 
@@ -214,7 +224,7 @@ ospf6_ovsdb_insert_nodeState (struct ospf6_ovsdb *ovsdb, struct ospf6_ovsdb_node
 
 	ret = srdb_insert_sync(ovsdb->srdb, tbl,
 	                       (struct srdb_entry *) &node->db_entry,
-			       &node->db_entry._row);
+			       (char *) &node->db_entry._row);
 	if (ret) {
 		zlog_err("Cannot push NodeState name='%s' addr='%s' prefix='%s' pbsid='%s'",
 		         node->db_entry.name, node->db_entry.addr, node->db_entry.prefix, node->db_entry.pbsid);
@@ -266,7 +276,7 @@ ospf6_ovsdb_insert_linkState (struct ospf6_ovsdb *ovsdb, struct ospf6_ovsdb_link
 
 	ret = srdb_insert_sync(ovsdb->srdb, tbl,
 	                       (struct srdb_entry *) &link->db_entry,
-			       &link->db_entry._row);
+			       (char *) &link->db_entry._row);
 	if (ret) {
 		zlog_err("Cannot push LinkState name1='%s' addr1='%s' name2='%s' addr2='%s'",
 		         link->db_entry.name1, link->db_entry.addr1, link->db_entry.name2, link->db_entry.addr2);

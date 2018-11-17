@@ -149,7 +149,7 @@ time_print(FILE *fp, struct timestamp_control *ctl)
   
 
 /* va_list version of zlog. */
-static void
+void
 vzlog (struct zlog *zl, int priority, const char *format, va_list args)
 {
   int original_errno = errno;
